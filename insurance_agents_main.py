@@ -170,7 +170,6 @@ def initialize_insurance_agents():
 
         FAILSAFE: When uncertain → "Please rephrase your question focusing specifically on insurance coverage details"
         """,
-        enable_agentic_context=True,
         markdown=True,
     )
 
