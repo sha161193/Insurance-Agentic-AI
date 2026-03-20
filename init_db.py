@@ -1,32 +1,32 @@
 """
 init_db.py — Railway startup script
-Runs creating_postgres_database.py safely on every deploy.
-Idempotent: uses IF NOT EXISTS so re-runs are safe.
 """
 import os
 import sys
 import time
 import psycopg2
 from psycopg2 import OperationalError
-from dotenv import load_dotenv
-
-load_dotenv()
 
 def get_conn_params():
-    """Prefer DATABASE_URL (Railway auto-injects), fall back to individual vars."""
-    database_url = os.getenv("DATABASE_URL")
+    database_url = os.environ.get("DATABASE_URL")
     if database_url:
+        # Railway injects postgres:// but psycopg2 needs postgresql://
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        print(f"✅ Using DATABASE_URL: {database_url[:40]}...")
         return {"dsn": database_url}
-    return {
-        "dbname":   os.getenv("PG_DB_NAME",   os.getenv("PGDATABASE", "insurance_db")),
-        "user":     os.getenv("PG_USER",       os.getenv("PGUSER",     "postgres")),
-        "password": os.getenv("PG_PASSWORD",   os.getenv("PGPASSWORD", "")),
-        "host":     os.getenv("PG_HOST",       os.getenv("PGHOST",     "localhost")),
-        "port":     int(os.getenv("PG_PORT",   os.getenv("PGPORT",     "5432"))),
-    }
+
+    # Fallback to individual vars
+    host = os.environ.get("PGHOST") or os.environ.get("PG_HOST", "localhost")
+    port = os.environ.get("PGPORT") or os.environ.get("PG_PORT", "5432")
+    dbname = os.environ.get("PGDATABASE") or os.environ.get("PG_DB_NAME", "railway")
+    user = os.environ.get("PGUSER") or os.environ.get("PG_USER", "postgres")
+    password = os.environ.get("PGPASSWORD") or os.environ.get("PG_PASSWORD", "")
+
+    print(f"✅ Using individual vars: host={host}, port={port}, dbname={dbname}, user={user}")
+    return {"host": host, "port": int(port), "dbname": dbname, "user": user, "password": password}
 
 def wait_for_db(max_retries=15, delay=4):
-    """Wait for Postgres to be ready (Railway provisions it async)."""
     params = get_conn_params()
     for attempt in range(1, max_retries + 1):
         try:
@@ -41,7 +41,6 @@ def wait_for_db(max_retries=15, delay=4):
     return False
 
 def init_schema():
-    """Run the schema setup from creating_postgres_database.py if it exists."""
     if os.path.exists("creating_postgres_database.py"):
         print("🏗️  Running schema initialization...")
         import importlib.util
@@ -57,6 +56,11 @@ def init_schema():
 
 if __name__ == "__main__":
     print("🚀 Railway startup: initializing database...")
+    print("🔍 Environment check:")
+    print(f"   DATABASE_URL present: {'DATABASE_URL' in os.environ}")
+    print(f"   PGHOST present: {'PGHOST' in os.environ}")
+    print(f"   PGUSER present: {'PGUSER' in os.environ}")
+
     if not wait_for_db():
         sys.exit(1)
     init_schema()
