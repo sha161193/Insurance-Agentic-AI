@@ -1,35 +1,32 @@
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-import openai
-from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType
+from openai import OpenAI
+from pymilvus import Collection, connections
 import json
 import time
 from threading import Timer, Event, Thread, Lock
 import os
 from dotenv import load_dotenv
+from milvus_adapter import get_milvus_client, get_pg_connection
 
 load_dotenv()
 
-# Validate environment variables
-required_vars = ["PG_DB_NAME", "PG_USER", "PG_PASSWORD", "PG_HOST", "PG_PORT", "OPENAI_API_KEY"]
-for var in required_vars:
-    if not os.getenv(var):
-        raise ValueError(f"Missing required environment variable: {var}")
+# Validate environment variables (DATABASE_URL is acceptable too)
+if not os.getenv("DATABASE_URL"):
+    required_vars = ["PG_DB_NAME", "PG_USER", "PG_PASSWORD", "PG_HOST", "PG_PORT"]
+    for var in required_vars:
+        if not os.getenv(var):
+            raise ValueError(f"Missing required environment variable: {var}")
 
-conn_params = {
-    "dbname": os.getenv("PG_DB_NAME"),
-    "user": os.getenv("PG_USER"),
-    "password": os.getenv("PG_PASSWORD"),
-    "host": os.getenv("PG_HOST"),
-    "port": os.getenv("PG_PORT"),
-}
+if not os.getenv("OPENAI_API_KEY"):
+    raise ValueError("Missing required environment variable: OPENAI_API_KEY")
 
-# Set up OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Set up OpenAI client
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 try:
-    # Connect to PostgreSQL database
-    conn = psycopg2.connect(**conn_params)
+    # Connect to PostgreSQL (handles DATABASE_URL or individual vars)
+    conn = get_pg_connection()
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     cur = conn.cursor()
 
@@ -54,14 +51,13 @@ try:
         AFTER INSERT OR UPDATE ON insurance_policies
         FOR EACH ROW EXECUTE FUNCTION notify_insurance_policy_change();
     """)
-    conn.commit()
 
     # Listen for notifications
     cur.execute("LISTEN insurance_policy_change;")
 
-    # Connect to Milvus
-    connections.connect("default", host="localhost", port="19530")
-    collection = Collection("insurance_policy_embeddings")  # Should verify collection exists
+    # Connect to Milvus (handles cloud vs local automatically)
+    get_milvus_client()
+    collection = Collection("insurance_policy_embeddings")
 
     # Thread-safe notifications list
     notifications = []
@@ -70,11 +66,11 @@ try:
 
     def get_openai_embedding(text):
         try:
-            response = openai.Embedding.create(
+            response = openai_client.embeddings.create(
                 input=text,
                 model="text-embedding-3-large"
             )
-            return response['data'][0]['embedding']
+            return response.data[0].embedding
         except Exception as e:
             print(f"Error getting embedding: {e}")
             return None
@@ -85,32 +81,36 @@ try:
             if notifications:
                 current_batch = notifications.copy()
                 notifications = []
+            else:
+                current_batch = []
 
         if current_batch:
             print(f"Processing {len(current_batch)} notifications")
             processed_ids = set()
-            
+
             for notify in current_batch:
                 try:
                     data = json.loads(notify.payload)
                     record_id = data['id']
-                    
+
                     if record_id in processed_ids:
                         continue
-                        
+
                     processed_ids.add(record_id)
-                    
-                    text = f"{data['customer_name']} {data['policy_type']} " \
-                           f"{data.get('life_insurance_details','')} " \
-                           f"{data.get('home_insurance_details','')} " \
-                           f"{data.get('auto_insurance_details','')}"
+
+                    text = (
+                        f"{data['customer_name']} {data['policy_type']} "
+                        f"{data.get('life_insurance_details', '')} "
+                        f"{data.get('home_insurance_details', '')} "
+                        f"{data.get('auto_insurance_details', '')}"
+                    )
 
                     embedding = get_openai_embedding(text)
                     if embedding:
                         collection.delete(f"id == {record_id}")
                         collection.insert([{"id": record_id, "embedding": embedding}])
                         collection.flush()
-                        print(f"Updated embedding for record ID {record_id}")
+                        print(f"✅ Updated embedding for record ID {record_id}")
                 except Exception as e:
                     print(f"Error processing notification: {e}")
 
@@ -149,5 +149,8 @@ finally:
         cur.close()
     if 'conn' in locals():
         conn.close()
-    connections.disconnect("default")
+    try:
+        connections.disconnect("default")
+    except Exception:
+        pass  # Already disconnected or cloud connection — safe to ignore
     print("Program stopped")
