@@ -48,6 +48,7 @@ def init_schema():
         mod = importlib.util.module_from_spec(spec)
         try:
             spec.loader.exec_module(mod)
+            mod.create_insurance_table_with_data()
             print("✅ Schema initialized.")
         except Exception as e:
             print(f"⚠️  Schema init warning (may already exist): {e}")
