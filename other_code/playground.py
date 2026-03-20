@@ -86,7 +86,6 @@ def create_milvus_agent(new: bool = False, user: str = "user") -> Optional[Agent
                 user_id=user,
                 knowledge=knowledge_base,
                 search_knowledge=True,
-                show_tool_calls=True,
                 add_history_to_messages=True,
                 num_history_runs=3,
                 num_history_responses=3,

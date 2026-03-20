@@ -161,7 +161,6 @@ def initialize_insurance_agents():
         2. Reject with template: "I specialize exclusively in life insurance. For [queried topic], please consult a [relevant expert]."
         3. Always cite sources for premium/benefit comparisons
         4. Flag outdated regulations automatically""",
-        show_tool_calls=True,
         markdown=True,
     )
 
@@ -180,7 +179,6 @@ def initialize_insurance_agents():
         2. Rejection template: "As a property insurance specialist, I cannot advise on [queried topic]."
         3. Always disclose coverage exclusions
         4. Cross-reference with NFIP data for flood-related queries""",
-        show_tool_calls=True,
         markdown=True,
     )
 
@@ -199,7 +197,6 @@ def initialize_insurance_agents():
         2. Rejection template: "This query about [topic] falls outside my auto insurance specialization."
         3. Always verify state DOI regulations
         4. Disclose claim impact on premiums""",
-        show_tool_calls=True,
         markdown=True,
     )
 
@@ -289,9 +286,7 @@ def initialize_insurance_agents():
         FAILSAFE: When uncertain → "Please rephrase your question focusing specifically on insurance coverage details or customer insurance information."
         """,
         enable_agentic_context=True,
-        show_tool_calls=True,
         markdown=True,
-        show_members_responses=True,
     )
 
     return coordinator
