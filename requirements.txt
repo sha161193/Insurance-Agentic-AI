@@ -12,3 +12,4 @@ sqlalchemy>=2.0.0
 pgvector>=0.2.5
 tenacity>=8.3.0
 loguru>=0.7.2
+agno>=1.0.0
